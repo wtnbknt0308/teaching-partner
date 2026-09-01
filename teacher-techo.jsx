@@ -1359,6 +1359,25 @@ function TabBar({ active, onChange, onSettings }) {
 /* ============================================================
    TODAY — 一日の全予定を統合表示
    ============================================================ */
+/* 横スワイプでページ送り（縦スクロール・端スワイプ・タップは邪魔しない） */
+function useSwipe(onLeft, onRight) {
+  const ref = useRef({ x: 0, y: 0, t: 0, active: false });
+  const onTouchStart = (e) => {
+    const t = e.touches && e.touches[0]; if (!t) return;
+    const w = (typeof window !== "undefined" && window.innerWidth) || 400;
+    if (t.clientX < 24 || t.clientX > w - 24) { ref.current.active = false; return; } // iOS戻る等と競合回避
+    ref.current = { x: t.clientX, y: t.clientY, t: Date.now(), active: true };
+  };
+  const onTouchEnd = (e) => {
+    if (!ref.current.active) return; ref.current.active = false;
+    const t = e.changedTouches && e.changedTouches[0]; if (!t) return;
+    const dx = t.clientX - ref.current.x, dy = t.clientY - ref.current.y, dt = Date.now() - ref.current.t;
+    if (dt > 800) return; if (Math.abs(dx) < 55) return; if (Math.abs(dx) < Math.abs(dy) * 1.4) return;
+    if (dx < 0) { onLeft && onLeft(); } else { onRight && onRight(); }
+  };
+  return { onTouchStart, onTouchEnd };
+}
+
 function TodayView({ data, setData, selDate, setSelDate, user }) {
   const idx = jsDayToIdx(selDate.getDay());
   const key = ymd(selDate);
@@ -1401,9 +1420,10 @@ function TodayView({ data, setData, selDate, setSelDate, user }) {
   const dayTodos = data.todos.filter((t) => t.date === key);
   const [newTodo, setNewTodo] = useState("");
   const addTodo = () => { if (!newTodo.trim()) return; setData((d) => ({ ...d, todos: [...d.todos, { id: uid(), date: key, text: newTodo.trim(), done: false }] })); setNewTodo(""); };
+  const swipe = useSwipe(() => setSelDate(addDays(selDate, 1)), () => setSelDate(addDays(selDate, -1)));
 
   return (
-    <div className="tp-view">
+    <div className="tp-view" {...swipe}>
       <div className="tp-daynav">
         <button className="tp-iconbtn" onClick={() => setSelDate(addDays(selDate, -1))}><ChevronLeft size={20} /></button>
         <div className="tp-daynav-mid">
@@ -1528,9 +1548,10 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
   }, [data, monday, vis]);
 
   const printWeek = (auto) => onPrint(`${monday.getFullYear()}年 ${monday.getMonth() + 1}/${monday.getDate()}〜 週間予定`, collectRows(data, monday, addDays(monday, 6), vis), vis, auto);
+  const swipe = useSwipe(() => setSelDate(addDays(selDate, 7)), () => setSelDate(addDays(selDate, -7)));
 
   return (
-    <div className="tp-view">
+    <div className="tp-view" {...swipe}>
       <div className="tp-daynav">
         <button className="tp-iconbtn" onClick={() => setSelDate(addDays(selDate, -7))}><ChevronLeft size={20} /></button>
         <div className="tp-daynav-mid"><div className="tp-daynav-date">{monday.getMonth() + 1}/{monday.getDate()} 〜 {addDays(monday, cols - 1).getMonth() + 1}/{addDays(monday, cols - 1).getDate()} の週</div>
@@ -1695,8 +1716,9 @@ function MonthView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint
   for (let d = 1; d <= daysInMonth; d++) cells.push(new Date(cursor.getFullYear(), cursor.getMonth(), d));
   while (cells.length % 7 !== 0) cells.push(null);
 
+  const swipeM = useSwipe(() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1)), () => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1)));
   return (
-    <div className="tp-view">
+    <div className="tp-view" {...swipeM}>
       <div className="tp-daynav">
         <button className="tp-iconbtn" onClick={() => setCursor(new Date(cursor.getFullYear(), cursor.getMonth() - 1, 1))}><ChevronLeft size={20} /></button>
         <div className="tp-daynav-mid"><div className="tp-daynav-date">{cursor.getFullYear()}年 {cursor.getMonth() + 1}月</div>
@@ -1795,8 +1817,9 @@ function QuarterView({ data, selDate, setSelDate, vis, toggleVis, onPrint, onPri
   const months = Array.from({ length: count }, (_, n) => new Date(base.getFullYear(), base.getMonth() + n, 1));
   const last = months[months.length - 1];
   const printQ = (auto) => onPrintCal(`${months[0].getFullYear()}年 ${months[0].getMonth() + 1}月〜${last.getMonth() + 1}月 予定表`, months, vis, auto);
+  const swipeQ = useSwipe(() => setBase(new Date(base.getFullYear(), base.getMonth() + count, 1)), () => setBase(new Date(base.getFullYear(), base.getMonth() - count, 1)));
   return (
-    <div className="tp-view">
+    <div className="tp-view" {...swipeQ}>
       <div className="tp-daynav">
         <button className="tp-iconbtn" onClick={() => setBase(new Date(base.getFullYear(), base.getMonth() - count, 1))}><ChevronLeft size={20} /></button>
         <div className="tp-daynav-mid"><div className="tp-daynav-date">{months[0].getMonth() + 1}月 〜 {last.getMonth() + 1}月</div>
@@ -1833,9 +1856,10 @@ function YearView({ data, setData, setSelDate, setTab, vis, toggleVis, onPrint }
   }, [data, vis, startYear]);
   const itemsInMonth = (y, m) => yearItems[`${y}-${m}`] || [];
   const printYear = (auto) => onPrint(`${startYear}年度 年間行事予定`, collectRows(data, new Date(startYear, 3, 1), new Date(startYear + 1, 2, 31), vis), vis, auto);
+  const swipeY = useSwipe(() => setStartYear(startYear + 1), () => setStartYear(startYear - 1));
 
   return (
-    <div className="tp-view">
+    <div className="tp-view" {...swipeY}>
       <div className="tp-daynav">
         <button className="tp-iconbtn" onClick={() => setStartYear(startYear - 1)}><ChevronLeft size={20} /></button>
         <div className="tp-daynav-mid"><div className="tp-daynav-date">{startYear}年度（{startYear}.4 〜 {startYear + 1}.3）</div>
@@ -2420,9 +2444,11 @@ function ClassesView({ data, setData }) {
   const [filter, setFilter] = useState("");
   const [sub, setSub] = useState("agg");
   const SUBTABS = [{ id: "agg", label: "集計・記録" }, { id: "test", label: "テスト" }, { id: "plan", label: "ロードマップ（計画）" }, { id: "prog", label: "進度（実績）" }];
+  const goSub = (dir) => { const ids = SUBTABS.map((s) => s.id); const i = ids.indexOf(sub === "book" ? "plan" : sub); const n = (i + dir + ids.length) % ids.length; setSub(ids[n]); };
+  const swipe = useSwipe(() => goSub(1), () => goSub(-1));
 
   return (
-    <div className="tp-view">
+    <div className="tp-view" {...swipe}>
       <div className="tp-subtabs">
         {SUBTABS.map((s) => <button key={s.id} className={"tp-subtab" + (sub === s.id ? " on" : "")} onClick={() => setSub(s.id)}>{s.label}</button>)}
       </div>
