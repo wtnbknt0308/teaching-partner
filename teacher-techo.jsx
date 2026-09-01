@@ -450,6 +450,18 @@ ${dutyLine}
 {"cells":[{"day":"月","period":1,"subject":"","klass":"","room":""}]}`,
     };
   }
+  if (kind === "club") {
+    return {
+      system: "あなたは部活動の月間予定表（練習・大会・休み）を正確に読み取るアシスタントです。出力は指定のJSONのみ。前置き・説明・コードフェンスは書かないこと。",
+      text: `この画像は部活動の月間予定表です。日ごとの予定を抽出してください。
+- date は "YYYY-MM-DD"。年の記載が無ければ ${ctx.year} 年、月の記載が無ければ ${ctx.month} 月として妥当に判断する。
+- content は内容（例：練習、放課後練習、午前練習、オフ/休み、◯◯大会 など）。
+- place は場所（分かれば）、time は "HH:MM–HH:MM" か開始時刻、無ければ空文字。
+- 休み・オフの日は content を「休み」にする。
+次のJSON形式だけを返す:
+{"days":[{"date":"","content":"","place":"","time":""}]}`,
+    };
+  }
   if (kind === "match") {
     return {
       system: "あなたは部活動の大会・試合予定表を正確に読み取るアシスタントです。出力は指定のJSONのみ。前置き・説明・コードフェンスは書かないこと。",
@@ -549,11 +561,13 @@ function ImportModal({ open, kind: kind0, ctx, data, setData, onClose }) {
         setEvSel((r.students || []).map(() => true));
       } else if (kind === "timetable") {
         setEvSel((r.cells || []).map(() => true));
+      } else if (kind === "club") {
+        setEvSel((r.days || []).map(() => true));
       } else {
         setEvSel((r.events || []).map(() => true));
         setDutySel((r.myDuties || []).map(() => true));
       }
-      if (!(r.events || []).length && !(r.myDuties || []).length && !(r.todos || []).length && !(r.matches || []).length && !(r.cells || []).length && !(r.students || []).length && !r.memo) setError("読み取れませんでした。鮮明な画像で再度お試しください。");
+      if (!(r.events || []).length && !(r.myDuties || []).length && !(r.todos || []).length && !(r.matches || []).length && !(r.cells || []).length && !(r.students || []).length && !(r.days || []).length && !r.memo) setError("読み取れませんでした。鮮明な画像で再度お試しください。");
     } catch (e) {
       setError(e.message || "読み取りに失敗しました。");
     } finally { setLoading(false); }
@@ -575,6 +589,12 @@ function ImportModal({ open, kind: kind0, ctx, data, setData, onClose }) {
         (result.cells || []).forEach((c) => { const di = DAYMAP[(c.day || "")[0]]; const pi = (Number(c.period) || 0) - 1; if (di >= 0 && pi >= 0 && c.subject) tt[`${di}-${pi}`] = { subject: c.subject, klass: c.klass || "", room: c.room || "" }; });
         return { ...d, timetable: tt };
       });
+      onClose();
+      return;
+    }
+    if (kind === "club") {
+      const rows = parseClubRows((result.days || []).map((x) => ({ 日付: x.date, 内容: x.content, 場所: x.place, 時間: x.time })), curCtx.year);
+      setData((d) => { const nd = { ...(d.club.days || {}) }; rows.forEach((r, i) => { if (evSel[i]) nd[r.date] = r.entry; }); return { ...d, club: { ...d.club, days: nd } }; });
       onClose();
       return;
     }
@@ -610,8 +630,8 @@ function ImportModal({ open, kind: kind0, ctx, data, setData, onClose }) {
     onClose();
   };
 
-  const titleMap = { month: "月間予定表", year: "年間予定表", daily: "日報", match: "大会予定", timetable: "週間時間割", roster: "名簿（画像）" };
-  const hintMap = { month: "月ごとの行事予定表の写真から予定を抽出します。", year: "年間行事予定表の写真から予定を抽出します。", daily: "1日分の連絡・予定・やることを抽出します。", match: "大会日程表から日付・大会名・会場を抽出します。", timetable: "週の時間割表から曜日×限のコマを抽出します。", roster: "名簿の写真から番号・氏名・ふりがなを抽出します。" };
+  const titleMap = { month: "月間予定表", year: "年間予定表", daily: "日報", match: "大会予定", timetable: "週間時間割", roster: "名簿（画像）", club: "部活の月間予定" };
+  const hintMap = { month: "月ごとの行事予定表の写真から予定を抽出します。", year: "年間行事予定表の写真から予定を抽出します。", daily: "1日分の連絡・予定・やることを抽出します。", match: "大会日程表から日付・大会名・会場を抽出します。", timetable: "週の時間割表から曜日×限のコマを抽出します。", roster: "名簿の写真から番号・氏名・ふりがなを抽出します。", club: "部活の月間予定表から、練習・休み・大会を日ごとに抽出します。" };
   const toggle = (arr, set, i) => { const a = [...arr]; a[i] = !a[i]; set(a); };
   const commitCount = kind === "daily"
     ? evSel.filter(Boolean).length + todoSel.filter(Boolean).length + (myDuty ? 1 : 0) + (memoEdit.trim() ? 1 : 0)
@@ -621,7 +641,7 @@ function ImportModal({ open, kind: kind0, ctx, data, setData, onClose }) {
   return (
     <Modal open={open} title="画像から取り込み" onClose={onClose} wide>
       <div className="tp-field"><span>取り込む種別</span>
-        <Seg options={[{ v: "month", label: "行事(月)" }, { v: "year", label: "行事(年間)" }, { v: "timetable", label: "時間割" }, { v: "match", label: "大会" }, { v: "roster", label: "名簿" }, { v: "daily", label: "日報" }]} value={kind} onChange={setKind} />
+        <Seg options={[{ v: "month", label: "行事(月)" }, { v: "year", label: "行事(年間)" }, { v: "timetable", label: "時間割" }, { v: "club", label: "部活" }, { v: "match", label: "大会" }, { v: "roster", label: "名簿" }, { v: "daily", label: "日報" }]} value={kind} onChange={setKind} />
       </div>
       {kind === "roster" && (
         <label className="tp-field"><span>取り込み先のクラス</span>
@@ -686,6 +706,22 @@ function ImportModal({ open, kind: kind0, ctx, data, setData, onClose }) {
           </ul>
           {result.notes && <p className="tp-hint">補足: {result.notes}</p>}
           <div className="tp-modal-actions"><button className="tp-ghostbtn" onClick={() => setResult(null)}>やり直す</button><button className="tp-primarybtn" disabled={!commitCount} onClick={commit}><Plus size={15} /> {commitCount}件を大会に追加</button></div>
+        </>
+      )}
+
+      {result && kind === "club" && (
+        <>
+          <div className="tp-result-head">部活の月間予定（チェックした日を追加します）</div>
+          <ul className="tp-result-list">
+            {(result.days || []).length === 0 && <li className="tp-empty">読み取れませんでした</li>}
+            {(result.days || []).map((x, i) => { const dd = /^\d{4}-\d{2}-\d{2}$/.test(x.date || "") ? parseYmd(x.date) : null; return (
+              <li key={i}><input type="checkbox" checked={!!evSel[i]} onChange={() => toggle(evSel, setEvSel, i)} />
+                <span className="tp-cat-dot" style={{ background: /休|オフ|off/i.test(x.content || "") ? "#8894A0" : /大会|試合/.test(x.content || "") ? "#D9534F" : "#E8845B" }} />
+                <span className="tp-res-date">{dd ? `${dd.getMonth() + 1}/${dd.getDate()}` : x.date}</span>
+                <span className="tp-res-title">{x.content}{(x.place || x.time) && <small className="tp-rec-hw">{[x.place, x.time].filter(Boolean).join(" / ")}</small>}</span></li>
+            ); })}
+          </ul>
+          <div className="tp-modal-actions"><button className="tp-ghostbtn" onClick={() => setResult(null)}>やり直す</button><button className="tp-primarybtn" disabled={!evSel.some(Boolean)} onClick={commit}><Plus size={15} /> {evSel.filter(Boolean).length}件を部活予定に追加</button></div>
         </>
       )}
 
@@ -1337,7 +1373,7 @@ function TodayView({ data, setData, selDate, setSelDate, user }) {
         const cell = data.timetable[`${idx}-${pi}`];
         if (cell && cell.subject) {
           const log = data.lessonLog[`${key}-${pi}`] || {};
-          const seq = cell.klass ? lessonSeqNo(data, cell.subject, cell.klass, key, pi, termStart) : null;
+          const seq = cell.klass ? lessonOrdinal(data, cell.subject, cell.klass, key, pi, termStart) : null;
           items.push({ time: p.start, kind: "lesson", periodIdx: pi, period: p.label, end: p.end, subject: cell.subject, klass: cell.klass, room: cell.room, done: !!log.done, topic: log.topic || "", seq });
         }
       });
@@ -1397,7 +1433,7 @@ function TodayView({ data, setData, selDate, setSelDate, user }) {
                         <button className={"tp-donebox" + (it.done ? " on" : "")} onClick={() => toggleDone(it.periodIdx)} aria-label="実施済み">{it.done && <Check size={12} />}</button>
                         <b>{it.period}限 {it.subject}</b>
                         <span className="tp-chip" style={{ background: subjColor(data, it.subject) }}>{it.klass}</span>
-                        {it.seq != null && it.klass && <span className="tp-seqbadge" title="この学期の実施時数（このクラス）">第{it.seq}時{!it.done && "（予定）"}</span>}
+                        {it.seq != null && it.klass && <span className="tp-seqbadge" title="学期の起点から数えた登録授業の通し番号（このクラス）">第{it.seq}時</span>}
                         {it.room && <span className="tp-tl-room"><MapPin size={11} />{it.room}</span>}
                         <button className="tp-linkbtn" onClick={() => setEditLesson(it.periodIdx)}><Pencil size={12} /> 授業計画</button>
                       </div>
@@ -1899,18 +1935,31 @@ function termEndOf(data, term) {
   const i = terms.findIndex((t) => t.id === term.id || t.start === term.start);
   return (i >= 0 && i < terms.length - 1) ? terms[i + 1].start : "9999-12-31";
 }
-// このコマが「その教科×クラスで学期の何時間目か」（実施済みを数え、未実施なら次の番号）
-function lessonSeqNo(data, subject, klass, key, pi, termStart) {
-  let n = 0;
-  for (const lk in (data.lessonLog || {})) {
-    const l = data.lessonLog[lk]; if (!l || !l.done || l.subject !== subject || l.klass !== klass) continue;
-    const d = lk.slice(0, 10); if (d < termStart) continue;
-    const p = parseInt(lk.slice(11), 10);
-    if (d < key || (d === key && p < pi)) n++;
-  }
-  return n + 1;
+// 週の時間割テンプレから、学期起点〜終端(inclusive)に「登録された授業コマ数」を数える（済みに関係なく累積）
+function scheduledCountUpTo(data, subject, klass, startYmd, endYmd) {
+  if (!subject || endYmd < startYmd) return 0;
+  const cols = data.meta.includeSat ? 6 : 5;
+  const perDay = {};
+  for (let di = 0; di < cols; di++) { let c = 0; for (let pi = 0; pi < data.periods.length; pi++) { const cell = data.timetable[`${di}-${pi}`]; if (cell && cell.subject === subject && (klass == null || cell.klass === klass)) c++; } perDay[di] = c; }
+  let n = 0, d = parseYmd(startYmd); const end = parseYmd(endYmd);
+  while (d <= end) { const di = jsDayToIdx(d.getDay()); if (di >= 0 && perDay[di]) n += perDay[di]; d = addDays(d, 1); }
+  return n;
 }
-// 学期内の実施済み時数を 教科→{クラス:件数} で集計
+// 実施済み（done）の数を数える
+function doneCountUpTo(data, subject, klass, startYmd, endYmd) {
+  let n = 0;
+  for (const lk in (data.lessonLog || {})) { const l = data.lessonLog[lk]; if (!l || !l.done || l.subject !== subject || (klass != null && l.klass !== klass)) continue; const d = lk.slice(0, 10); if (d < startYmd || d > endYmd) continue; n++; }
+  return n;
+}
+// このコマが学期の「登録ベースで何時間目か」（済みに関係なく通し番号）
+function lessonOrdinal(data, subject, klass, key, pi, termStart) {
+  if (key < termStart) return 1;
+  const before = scheduledCountUpTo(data, subject, klass, termStart, ymd(addDays(parseYmd(key), -1)));
+  const di = jsDayToIdx(parseYmd(key).getDay());
+  let today = 0; for (let p = 0; p < pi; p++) { const cell = data.timetable[`${di}-${p}`]; if (cell && cell.subject === subject && cell.klass === klass) today++; }
+  return before + today + 1;
+}
+// 学期内の実施済み時数を 教科→{クラス:件数} で集計（従来互換）
 function termLessonCounts(data, termStart, termEnd) {
   const map = {};
   for (const lk in (data.lessonLog || {})) {
@@ -1919,6 +1968,12 @@ function termLessonCounts(data, termStart, termEnd) {
     const kl = l.klass || "—"; (map[l.subject] = map[l.subject] || {}); map[l.subject][kl] = (map[l.subject][kl] || 0) + 1;
   }
   return map;
+}
+// 時間割テンプレに存在する 教科→[クラス...] の一覧
+function timetableSubjectKlasses(data) {
+  const cols = data.meta.includeSat ? 6 : 5; const map = {};
+  for (let di = 0; di < cols; di++) for (let pi = 0; pi < data.periods.length; pi++) { const c = data.timetable[`${di}-${pi}`]; if (c && c.subject && c.klass) { (map[c.subject] = map[c.subject] || new Set()).add(c.klass); } }
+  const out = {}; Object.keys(map).forEach((s) => { out[s] = [...map[s]].sort(); }); return out;
 }
 const mondaysBetween = (from, to) => { const res = []; let d = startOfWeekMon(from); while (d <= to) { res.push(new Date(d)); d = addDays(d, 7); } return res; };
 
@@ -2054,12 +2109,14 @@ function TestsPanel({ data, setData }) {
   const tests = [...(data.tests || [])].sort((a, b) => (a.date || "").localeCompare(b.date || ""));
   const [t, setT] = useState({ name: "", type: "定期", date: "", pageFrom: "", pageTo: "" });
   const [found, setFound] = useState(null);
+  const [foundSel, setFoundSel] = useState([]);
   const units = (data.textbook && data.textbook.units) || [];
   const add = () => { if (!t.name.trim() || !t.date) return; setData((d) => ({ ...d, tests: [...(d.tests || []), { id: uid(), name: t.name.trim(), type: t.type, date: t.date, pageFrom: Number(t.pageFrom) || 0, pageTo: Number(t.pageTo) || 0 }] })); setT({ name: "", type: "定期", date: "", pageFrom: "", pageTo: "" }); };
   const del = (id) => setData((d) => ({ ...d, tests: d.tests.filter((x) => x.id !== id) }));
   const updTest = (id, patch) => setData((d) => ({ ...d, tests: d.tests.map((x) => x.id === id ? { ...x, ...patch } : x) }));
-  const scan = () => setFound(extractTestsFromEvents(data));
-  const addFound = () => { const items = (found || []).map((f) => ({ id: uid(), name: f.name, type: f.type, date: f.date, pageFrom: 0, pageTo: 0 })); setData((d) => ({ ...d, tests: [...(d.tests || []), ...items] })); setFound(null); };
+  const scan = () => { const f = extractTestsFromEvents(data); setFound(f); setFoundSel(f.map(() => true)); };
+  const checkedCount = (foundSel || []).filter(Boolean).length;
+  const addFound = () => { const items = (found || []).filter((_, i) => foundSel[i]).map((f) => ({ id: uid(), name: f.name, type: f.type, date: f.date, pageFrom: 0, pageTo: 0 })); if (items.length) setData((d) => ({ ...d, tests: [...(d.tests || []), ...items] })); setFound(null); setFoundSel([]); };
   const applyUnit = (id, uid2) => { const u = units.find((x) => x.id === uid2); if (!u) return; updTest(id, { pageFrom: u.pageFrom || 0, pageTo: u.pageTo || 0, unitId: uid2 }); };
 
   return (
@@ -2071,27 +2128,28 @@ function TestsPanel({ data, setData }) {
       </div>
       {found && (
         <div className="tp-testfound">
-          <div className="tp-mtg-grouphead">抽出 {found.length}件{found.length === 0 && "（テストらしい行事は見つかりませんでした）"}</div>
+          <div className="tp-mtg-grouphead">抽出 {found.length}件{found.length === 0 ? "（テストらしい行事は見つかりませんでした）" : " — 追加するものにチェック"}</div>
           {found.map((f, i) => { const d = parseYmd(f.date); return (
-            <div key={i} className="tp-testfound-row"><span className="tp-chip sm" style={{ background: testTypeColor(f.type) }}>{f.type}</span><span className="tp-test-date">{d.getMonth() + 1}/{d.getDate()}</span><span className="tp-test-name">{f.name}</span></div>
+            <div key={i} className="tp-testfound-row" onClick={() => setFoundSel((s) => s.map((x, j) => j === i ? !x : x))}>
+              <button className={"tp-donebox" + (foundSel[i] ? " on" : "")}>{foundSel[i] && <Check size={12} />}</button>
+              <span className="tp-chip sm" style={{ background: testTypeColor(f.type) }}>{f.type}</span>
+              <span className="tp-test-date">{d.getMonth() + 1}/{d.getDate()}</span>
+              <span className="tp-test-name">{f.name}</span>
+            </div>
           ); })}
-          {found.length > 0 && <div className="tp-modal-actions"><button className="tp-ghostbtn" onClick={() => setFound(null)}>閉じる</button><button className="tp-primarybtn" onClick={addFound}><Plus size={15} /> {found.length}件を追加</button></div>}
+          {found.length > 0 && <div className="tp-modal-actions"><button className="tp-ghostbtn" onClick={() => { setFound(null); setFoundSel([]); }}>キャンセル</button><button className="tp-primarybtn" disabled={checkedCount === 0} onClick={addFound}><Plus size={15} /> チェックした{checkedCount}件をリストに追加</button></div>}
         </div>
       )}
       <ul className="tp-testlist">
         {tests.length === 0 && <li className="tp-empty">テスト未登録</li>}
         {tests.map((x) => { const d = parseYmd(x.date); return (
           <li key={x.id} className="tp-test-item">
-            <div className="tp-test-line1">
-              <span className="tp-chip sm" style={{ background: testTypeColor(x.type) }}>{x.type}</span>
-              <span className="tp-test-date">{d.getMonth() + 1}/{d.getDate()}</span>
-              <span className="tp-test-name">{x.name}</span>
-              <button className="tp-iconbtn tiny" onClick={() => del(x.id)}><Trash2 size={13} /></button>
-            </div>
-            <div className="tp-test-line2">
-              <span className="tp-u-p">範囲 p.<input type="number" value={x.pageFrom || ""} onChange={(e) => updTest(x.id, { pageFrom: Number(e.target.value) || 0 })} placeholder="from" />–<input type="number" value={x.pageTo || ""} onChange={(e) => updTest(x.id, { pageTo: Number(e.target.value) || 0 })} placeholder="to" /></span>
-              {units.length > 0 && <select value={x.unitId || ""} onChange={(e) => applyUnit(x.id, e.target.value)}><option value="">単元から範囲を入れる…</option>{units.map((u) => <option key={u.id} value={u.id}>{u.program || u.title || u.name}</option>)}</select>}
-            </div>
+            <span className="tp-chip sm" style={{ background: testTypeColor(x.type) }}>{x.type}</span>
+            <span className="tp-test-date">{d.getMonth() + 1}/{d.getDate()}</span>
+            <span className="tp-test-name">{x.name}</span>
+            <span className="tp-u-p tp-test-range">p.<input type="number" value={x.pageFrom || ""} onChange={(e) => updTest(x.id, { pageFrom: Number(e.target.value) || 0 })} placeholder="—" />–<input type="number" value={x.pageTo || ""} onChange={(e) => updTest(x.id, { pageTo: Number(e.target.value) || 0 })} placeholder="—" /></span>
+            {units.length > 0 && <select className="tp-test-unit" value={x.unitId || ""} onChange={(e) => applyUnit(x.id, e.target.value)}><option value="">単元から…</option>{units.map((u) => <option key={u.id} value={u.id}>{u.program || u.title || u.name}</option>)}</select>}
+            <button className="tp-iconbtn tiny tp-test-del" onClick={() => del(x.id)}><Trash2 size={13} /></button>
           </li>
         ); })}
       </ul>
@@ -2225,14 +2283,18 @@ function RoadmapPanel({ data, setData, onOpenTextbook }) {
   );
 }
 
-/* 実施時数（教科×クラス）の比較カード */
+/* 実施時数（教科×クラス）：登録ベースの累積と、済み/累積の分数 */
 function ClassProgressCard({ data }) {
   const [termId, setTermId] = useState("");
   const terms = [...(data.terms || [])].filter((t) => /^\d{4}-\d{2}-\d{2}$/.test(t.start || "")).sort((a, b) => a.start.localeCompare(b.start));
   const cur = terms.find((t) => t.id === termId) || currentTerm(data, new Date());
-  const end = termEndOf(data, cur);
-  const counts = termLessonCounts(data, cur.start, end);
-  const subjects = Object.keys(counts);
+  const endExclusive = termEndOf(data, cur);
+  const todayY = ymd(new Date());
+  // 数える終端：今日（学期内）／過去学期なら学期末前日／未来学期なら起点前日（=0件）
+  const lastDay = ymd(addDays(parseYmd(endExclusive), -1));
+  const endY = todayY < cur.start ? ymd(addDays(parseYmd(cur.start), -1)) : (todayY <= lastDay ? todayY : lastDay);
+  const sk = timetableSubjectKlasses(data);
+  const subjects = Object.keys(sk).sort();
   return (
     <section className="tp-card">
       <div className="tp-plan-head">
@@ -2241,17 +2303,18 @@ function ClassProgressCard({ data }) {
           <label>学期<select value={cur.id || ""} onChange={(e) => setTermId(e.target.value)}>{terms.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></label>
         </div>
       </div>
-      <p className="tp-hint" style={{ marginTop: 0 }}>「今日」画面で<b>済み</b>にした授業を、学期の起点から数えています。クラス間の進度差を見ながら内容を検討できます。</p>
-      {subjects.length === 0 ? <p className="tp-empty">この学期の実施記録はまだありません。「今日」画面で授業を「済み」にすると集計されます。</p> : (
+      <p className="tp-hint" style={{ marginTop: 0 }}>時間割に登録された授業を、学期の起点から今日までで数えた<b>累積時数</b>です。数字は「<b>済み / 累積</b>」。クラス間の進度差を見ながら内容を検討できます。</p>
+      {subjects.length === 0 ? <p className="tp-empty">時間割に授業が登録されていません。週間タブで教科・クラスを設定してください。</p> : (
         <div className="tp-prog2">
           {subjects.map((s) => {
-            const byK = counts[s]; const ks = Object.keys(byK).sort(); const vals = ks.map((k) => byK[k]);
-            const max = Math.max(...vals); const min = Math.min(...vals);
+            const ks = sk[s];
+            const rows = ks.map((k) => ({ k, sched: scheduledCountUpTo(data, s, k, cur.start, endY), done: doneCountUpTo(data, s, k, cur.start, endY) }));
+            const scheds = rows.map((r) => r.sched); const max = Math.max(...scheds); const min = Math.min(...scheds);
             return (
               <div key={s} className="tp-prog2-row">
                 <div className="tp-prog2-sub"><span className="tp-dot2" style={{ background: subjColor(data, s) }} />{s}{ks.length > 1 && max !== min && <span className="tp-prog2-gap">差{max - min}</span>}</div>
                 <div className="tp-prog2-klasses">
-                  {ks.map((k) => <span key={k} className={"tp-prog2-k" + (byK[k] === max ? " hi" : "") + (byK[k] === min && max !== min ? " lo" : "")}>{k}<b>{byK[k]}</b></span>)}
+                  {rows.map((r) => <span key={r.k} className={"tp-prog2-k" + (r.sched === max && max !== min ? " hi" : "") + (r.sched === min && max !== min ? " lo" : "")}>{r.k}<b>{r.done}/{r.sched}</b></span>)}
                 </div>
               </div>
             );
@@ -2489,6 +2552,7 @@ function ClubView({ data, setData, onShare }) {
   const [bulkVal, setBulkVal] = useState({ kind: "practice", session: "after", place: "二中", placeOther: "", time: "", content: "", matchName: "", note: "" });
   const [showWeekly, setShowWeekly] = useState(false);
   const [matchImp, setMatchImp] = useState(false);
+  const [clubImp, setClubImp] = useState(false);
 
   const y = cursor.getFullYear(), m = cursor.getMonth();
   const dim = new Date(y, m + 1, 0).getDate();
@@ -2520,6 +2584,10 @@ function ClubView({ data, setData, onShare }) {
             <button className="tp-ghostbtn sm" onClick={() => { const rows = dates.map((d) => ({ date: d, items: calItemsForDate(data, d, { club: true }) })).filter((r) => r.items.length); onShare && onShare(`${data.club.name || "部活"} ${y}年${m + 1}月 予定`, rows); }}><Printer size={13} /> 共有</button>
           </div>
           <button className="tp-iconbtn" onClick={() => setCursor(new Date(y, m + 1, 1))}><ChevronRight size={20} /></button>
+        </div>
+
+        <div className="tp-toolbar" style={{ justifyContent: "flex-start" }}>
+          <button className="tp-ghostbtn" onClick={() => setClubImp(true)}><Upload size={14} /> 月間予定表を画像で取り込み</button>
         </div>
 
         <div className="tp-bulkbar">
@@ -2633,6 +2701,7 @@ function ClubView({ data, setData, onShare }) {
       </Modal>
 
       <ImportModal open={matchImp} kind="match" ctx={{ year: y }} data={data} setData={setData} onClose={() => setMatchImp(false)} />
+      <ImportModal open={clubImp} kind="club" ctx={{ year: y, month: m + 1 }} data={data} setData={setData} onClose={() => setClubImp(false)} />
     </div>
   );
 }
@@ -4229,13 +4298,14 @@ const CSS = `
 .tp-ocr-date{ font-size:12px; color:var(--muted); white-space:nowrap; min-width:96px; }
 .tp-ocr-title{ flex:1; }
 /* tests panel */
-.tp-test-item{ display:flex; flex-direction:column; gap:5px; padding:8px 0; border-bottom:1px solid var(--line); }
-.tp-test-line1{ display:flex; align-items:center; gap:8px; }
-.tp-test-line2{ display:flex; align-items:center; gap:10px; flex-wrap:wrap; padding-left:2px; }
-.tp-test-line2 input[type=number]{ width:56px; }
-.tp-test-line2 select{ font-size:12px; }
+.tp-test-item{ display:flex; align-items:center; justify-content:flex-start; gap:8px; flex-wrap:wrap; padding:8px 0; border-bottom:1px solid var(--line); }
+.tp-test-item .tp-test-name{ font-weight:700; }
+.tp-test-range{ margin-left:2px; }
+.tp-test-range input[type=number]{ width:52px; }
+.tp-test-unit{ font-size:12px; max-width:150px; }
+.tp-test-del{ margin-left:auto; }
 .tp-testfound{ background:var(--sky-soft); border-radius:10px; padding:8px 10px; margin-bottom:8px; }
-.tp-testfound-row{ display:flex; align-items:center; gap:8px; padding:3px 0; font-size:13px; }
+.tp-testfound-row{ display:flex; align-items:center; gap:8px; padding:4px 2px; font-size:13px; cursor:pointer; }
 /* 時数カウンタ */
 .tp-seqbadge{ font-size:11px; font-weight:800; color:var(--sky-deep); background:var(--sky-soft); border-radius:10px; padding:1px 8px; white-space:nowrap; }
 .tp-prog2{ display:flex; flex-direction:column; gap:8px; }
