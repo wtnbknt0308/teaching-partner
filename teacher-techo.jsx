@@ -1575,10 +1575,12 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
               <div className="tp-tt-period"><b>{p.label}</b><span>{p.start}</span></div>
               {Array.from({ length: cols }).map((_, di) => {
                 const cell = data.timetable[`${di}-${pi}`];
+                const cdate = addDays(monday, di);
+                const seq = cell?.subject && cell?.klass ? lessonOrdinal(data, cell.subject, cell.klass, ymd(cdate), pi, currentTerm(data, cdate).start) : null;
                 return (
                   <button key={di} className="tp-tt-cell" onClick={() => setEdit({ dayIdx: di, periodIdx: pi })}
                     style={cell?.subject ? { background: subjColor(data, cell.subject) + "1A", borderLeft: `3px solid ${subjColor(data, cell.subject)}` } : {}}>
-                    {cell?.subject ? (<><span className="tp-tt-sub" style={{ color: subjColor(data, cell.subject) }}>{cell.subject}</span><span className="tp-tt-klass">{cell.klass}</span>{cell.room && <span className="tp-tt-room">{cell.room}</span>}</>) : <span className="tp-tt-plus">+</span>}
+                    {cell?.subject ? (<><span className="tp-tt-sub" style={{ color: subjColor(data, cell.subject) }}>{cell.subject}</span><span className="tp-tt-klass">{cell.klass}</span>{cell.room && <span className="tp-tt-room">{cell.room}</span>}{seq != null && <span className="tp-tt-seq">第{seq}時</span>}</>) : <span className="tp-tt-plus">+</span>}
                   </button>
                 );
               })}
@@ -4652,7 +4654,8 @@ textarea{ resize:vertical; width:100%; }
 .tp-tt-period{ display:flex; flex-direction:column; align-items:center; justify-content:center; font-size:11px; color:var(--muted); }
 .tp-tt-period b{ font-size:14px; color:var(--ink); }
 .tp-tt-period.after b{ font-size:11px; }
-.tp-tt-cell{ background:#fafcfd; border:1px solid var(--line); border-radius:8px; min-height:56px; padding:5px 6px; cursor:pointer; display:flex; flex-direction:column; gap:2px; align-items:flex-start; justify-content:center; transition:.12s; text-align:left; }
+.tp-tt-cell{ position:relative; background:#fafcfd; border:1px solid var(--line); border-radius:8px; min-height:56px; padding:5px 6px; cursor:pointer; display:flex; flex-direction:column; gap:2px; align-items:flex-start; justify-content:center; transition:.12s; text-align:left; }
+.tp-tt-seq{ position:absolute; top:2px; right:4px; font-size:9px; font-weight:800; color:var(--sky-deep); opacity:.85; line-height:1; }
 .tp-tt-cell:hover{ border-color:var(--sky); }
 .tp-tt-cell.after{ min-height:40px; cursor:default; }
 .tp-tt-sub{ font-weight:700; font-size:13px; }
