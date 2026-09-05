@@ -156,7 +156,7 @@ function migrate(data) {
   d.textbook = { ...base.textbook, ...(data.textbook || {}) };
   d.textbook.units = (data.textbook && data.textbook.units) || [];
   ["events", "todos", "duties", "routine", "tests", "subjects", "classes", "periods", "meetings"].forEach((k) => { if (!Array.isArray(d[k])) d[k] = Array.isArray(base[k]) ? base[k] : []; });
-  ["timetable", "lessonLog", "rosters", "weeklyManual", "dayMemo", "targets", "testProgress", "roadmap"].forEach((k) => { if (!d[k] || typeof d[k] !== "object") d[k] = {}; });
+  ["timetable", "lessonLog", "rosters", "weeklyManual", "dayMemo", "targets", "testProgress", "roadmap", "lessonNotes"].forEach((k) => { if (!d[k] || typeof d[k] !== "object") d[k] = {}; });
   if (!Array.isArray(d.terms) || !d.terms.length) { const fy = parseInt(String(d.meta && d.meta.year || "").replace(/\D/g, ""), 10) || new Date().getFullYear(); d.terms = [{ id: uid(), name: "1学期", start: `${fy}-04-01` }, { id: uid(), name: "2学期", start: `${fy}-09-01` }, { id: uid(), name: "3学期", start: `${fy + 1}-01-08` }]; }
   d.todos = (d.todos || []).map((t) => typeof t === "string" ? { id: uid(), text: t, done: false, cat: "その他" } : { cat: "その他", ...t });
   if (!d.meta.theme) d.meta.theme = "light";
@@ -249,6 +249,7 @@ function defaultData() {
     todos: [], // {id, date, text, done}
     meetings: [], // {id, date, title, cat, notes, imgs:[imgId]} 職員会議
     weeklyManual: {}, // { [klass]: 週コマ数 } 手入力があれば集計で優先
+    lessonNotes: {}, // { `${termId}::${subject}::${klass}::${ordinal}`: メモ } 第◯時ごとの授業メモ（クラス間で共有可）
     dayMemo: {}, // { [date]: テキストメモ（日報取り込み先） }
     // ---- 授業（年間計画） ----
     textbook: {
@@ -1393,7 +1394,7 @@ function TodayView({ data, setData, selDate, setSelDate, user }) {
         if (cell && cell.subject) {
           const log = data.lessonLog[`${key}-${pi}`] || {};
           const seq = cell.klass ? lessonOrdinal(data, cell.subject, cell.klass, key, pi, termStart) : null;
-          items.push({ time: p.start, kind: "lesson", periodIdx: pi, period: p.label, end: p.end, subject: cell.subject, klass: cell.klass, room: cell.room, done: !!log.done, topic: log.topic || "", seq });
+          items.push({ time: p.start, kind: "lesson", periodIdx: pi, period: p.label, end: p.end, subject: cell.subject, klass: cell.klass, room: cell.room, done: !!log.done, topic: log.topic || "", alt: !!log.alt, seq });
         }
       });
       const cd = clubDayDisplay(data, key, idx);
@@ -1453,6 +1454,7 @@ function TodayView({ data, setData, selDate, setSelDate, user }) {
                         <button className={"tp-donebox" + (it.done ? " on" : "")} onClick={() => toggleDone(it.periodIdx)} aria-label="実施済み">{it.done && <Check size={12} />}</button>
                         <b>{it.period}限 {it.subject}</b>
                         <span className="tp-chip" style={{ background: subjColor(data, it.subject) }}>{it.klass}</span>
+                        {it.alt && <span className="tp-altbadge">ALT</span>}
                         {it.seq != null && it.klass && <span className="tp-seqbadge" title="学期の起点から数えた登録授業の通し番号（このクラス）">第{it.seq}時</span>}
                         {it.room && <span className="tp-tl-room"><MapPin size={11} />{it.room}</span>}
                         <button className="tp-linkbtn" onClick={() => setEditLesson(it.periodIdx)}><Pencil size={12} /> 授業計画</button>
@@ -1537,6 +1539,18 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
   const [edit, setEdit] = useState(null); // {dayIdx, periodIdx}
   const [bulk, setBulk] = useState(false);
   const [imp, setImp] = useState(false);
+  const [noteText, setNoteText] = useState("");
+  const [shareChk, setShareChk] = useState(false);
+  const editInfo = useMemo(() => {
+    if (!edit) return null;
+    const cell = data.timetable[`${edit.dayIdx}-${edit.periodIdx}`] || { subject: "", klass: "", room: "" };
+    const cdate = addDays(monday, edit.dayIdx);
+    const termId = currentTerm(data, cdate).id || "";
+    const ord = cell.subject && cell.klass ? lessonOrdinal(data, cell.subject, cell.klass, ymd(cdate), edit.periodIdx, currentTerm(data, cdate).start) : null;
+    const noteKey = (cell.subject && cell.klass && ord != null) ? lessonNoteKey(termId, cell.subject, cell.klass, ord) : null;
+    return { cell, cdate, termId, ord, noteKey };
+  }, [edit, data, monday]);
+  useEffect(() => { if (edit && editInfo) { setNoteText((editInfo.noteKey && data.lessonNotes[editInfo.noteKey]) || ""); setShareChk(false); } }, [edit]);
 
   const weekEvents = useMemo(() => {
     const list = [];
@@ -1577,10 +1591,12 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
                 const cell = data.timetable[`${di}-${pi}`];
                 const cdate = addDays(monday, di);
                 const seq = cell?.subject && cell?.klass ? lessonOrdinal(data, cell.subject, cell.klass, ymd(cdate), pi, currentTerm(data, cdate).start) : null;
+                const hasNote = seq != null && !!(data.lessonNotes || {})[lessonNoteKey(currentTerm(data, cdate).id || "", cell.subject, cell.klass, seq)];
+                const alt = cell?.subject && !!(data.lessonLog[`${ymd(cdate)}-${pi}`] || {}).alt;
                 return (
                   <button key={di} className="tp-tt-cell" onClick={() => setEdit({ dayIdx: di, periodIdx: pi })}
                     style={cell?.subject ? { background: subjColor(data, cell.subject) + "1A", borderLeft: `3px solid ${subjColor(data, cell.subject)}` } : {}}>
-                    {cell?.subject ? (<><span className="tp-tt-sub" style={{ color: subjColor(data, cell.subject) }}>{cell.subject}</span><span className="tp-tt-klass">{cell.klass}</span>{cell.room && <span className="tp-tt-room">{cell.room}</span>}{seq != null && <span className="tp-tt-seq">第{seq}時</span>}</>) : <span className="tp-tt-plus">+</span>}
+                    {cell?.subject ? (<><span className="tp-tt-sub" style={{ color: subjColor(data, cell.subject) }}>{cell.subject}</span><span className="tp-tt-klass">{cell.klass}</span>{cell.room && <span className="tp-tt-room">{cell.room}</span>}{alt && <span className="tp-tt-alt">ALT</span>}{seq != null && <span className="tp-tt-seq">第{seq}時</span>}{hasNote && <span className="tp-tt-note" title="メモあり">✎</span>}</>) : <span className="tp-tt-plus">+</span>}
                   </button>
                 );
               })}
@@ -1627,9 +1643,39 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
                   {data.classes.map((c) => <option key={c} value={c}>{c}</option>)}
                 </select></label>
               <label className="tp-field"><span>教室</span><input value={cell.room} onChange={(e) => set({ room: e.target.value })} placeholder="例）理科室" /></label>
+              {cell.subject && editInfo && (() => {
+                const alk = `${ymd(editInfo.cdate)}-${edit.periodIdx}`;
+                const altOn = !!(data.lessonLog[alk] || {}).alt;
+                return (
+                  <label className="tp-check"><input type="checkbox" checked={altOn} onChange={(e) => { const on = e.target.checked; setData((d) => { const ll = { ...d.lessonLog }; const cur = ll[alk] || {}; const next = { ...cur, alt: on, subject: cell.subject, klass: cell.klass }; if (!on) { delete next.alt; if (!next.done && !next.topic && !next.hw) { delete ll[alk]; return { ...d, lessonLog: ll }; } } ll[alk] = next; return { ...d, lessonLog: ll }; }); }} /> ALT参加（この回）</label>
+                );
+              })()}
+              {cell.subject && cell.klass && editInfo && editInfo.ord != null && (
+                <>
+                  <label className="tp-field"><span>メモ（{cell.subject} 第{editInfo.ord}時）</span>
+                    <textarea rows={3} value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="この授業のメモ（ねらい・板書・持ち物 など）" /></label>
+                  {(() => { const others = (timetableSubjectKlasses(data)[cell.subject] || []).filter((c) => c !== cell.klass); return others.length > 0 ? (
+                    <label className="tp-check"><input type="checkbox" checked={shareChk} onChange={(e) => setShareChk(e.target.checked)} /> 同じ「{cell.subject} 第{editInfo.ord}時」の他クラス（{others.join("・")}）にも追記して共有</label>
+                  ) : null; })()}
+                </>
+              )}
               <div className="tp-modal-actions">
                 <button className="tp-dangerbtn" style={{ marginTop: 0 }} onClick={() => { setData((d) => { const t = { ...d.timetable }; delete t[k]; return { ...d, timetable: t }; }); setEdit(null); }}><Trash2 size={14} /> このコマを空にする</button>
-                <button className="tp-primarybtn" onClick={() => setEdit(null)}><Check size={15} /> 完了</button>
+                <button className="tp-primarybtn" onClick={() => {
+                  if (editInfo && editInfo.noteKey) {
+                    const key = editInfo.noteKey; const txt = noteText; const share = shareChk;
+                    setData((d) => {
+                      const notes = { ...(d.lessonNotes || {}) };
+                      if (txt.trim()) notes[key] = txt; else delete notes[key];
+                      if (share && txt.trim()) {
+                        const others = (timetableSubjectKlasses(d)[cell.subject] || []).filter((c) => c !== cell.klass);
+                        others.forEach((oc) => { const ok = lessonNoteKey(editInfo.termId, cell.subject, oc, editInfo.ord); const cur = notes[ok] || ""; notes[ok] = cur.trim() ? (cur.trimEnd() + "\n" + txt) : txt; });
+                      }
+                      return { ...d, lessonNotes: notes };
+                    });
+                  }
+                  setEdit(null);
+                }}><Check size={15} /> 完了</button>
               </div>
             </>
           );
@@ -1995,6 +2041,8 @@ function termLessonCounts(data, termStart, termEnd) {
   }
   return map;
 }
+// 第◯時ごとの授業メモのキー
+function lessonNoteKey(termId, subject, klass, ordinal) { return `${termId}::${subject}::${klass}::${ordinal}`; }
 // 時間割テンプレに存在する 教科→[クラス...] の一覧
 function timetableSubjectKlasses(data) {
   const cols = data.meta.includeSat ? 6 : 5; const map = {};
@@ -4656,6 +4704,9 @@ textarea{ resize:vertical; width:100%; }
 .tp-tt-period.after b{ font-size:11px; }
 .tp-tt-cell{ position:relative; background:#fafcfd; border:1px solid var(--line); border-radius:8px; min-height:56px; padding:5px 6px; cursor:pointer; display:flex; flex-direction:column; gap:2px; align-items:flex-start; justify-content:center; transition:.12s; text-align:left; }
 .tp-tt-seq{ position:absolute; top:2px; right:4px; font-size:9px; font-weight:800; color:var(--sky-deep); opacity:.85; line-height:1; }
+.tp-tt-note{ position:absolute; bottom:2px; right:4px; font-size:10px; color:var(--coral); line-height:1; }
+.tp-tt-alt{ position:absolute; bottom:2px; left:4px; font-size:8px; font-weight:800; color:#fff; background:var(--coral); border-radius:5px; padding:1px 4px; line-height:1.2; }
+.tp-altbadge{ font-size:10px; font-weight:800; color:#fff; background:var(--coral); border-radius:8px; padding:1px 7px; }
 .tp-tt-cell:hover{ border-color:var(--sky); }
 .tp-tt-cell.after{ min-height:40px; cursor:default; }
 .tp-tt-sub{ font-weight:700; font-size:13px; }
