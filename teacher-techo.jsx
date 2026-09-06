@@ -29,6 +29,8 @@ const jsDayToIdx = (jsDay) => (jsDay === 0 ? -1 : jsDay - 1); // 月=0..土=5, �
 const t2m = (t) => { if (!t) return 9999; const [h, m] = t.split(":").map(Number); return h * 60 + m; };
 const uid = () => Math.random().toString(36).slice(2, 9);
 const startOfWeekMon = (d) => { const x = new Date(d); const j = x.getDay(); const back = j === 0 ? 6 : j - 1; return addDays(x, -back); };
+const mondayKey = (d) => ymd(startOfWeekMon(d)); // 週ごと時間割のキー（その週の月曜）
+const weekTT = (data, wk) => (data.timetableByWeek && data.timetableByWeek[wk]) || {}; // 指定週の時間割マップ（読み取り用）
 
 /* ---------- storage (オフライン優先: localStorage → window.storage → メモリ) ---------- */
 const NS = "teacher-techo";
@@ -156,7 +158,10 @@ function migrate(data) {
   d.textbook = { ...base.textbook, ...(data.textbook || {}) };
   d.textbook.units = (data.textbook && data.textbook.units) || [];
   ["events", "todos", "duties", "routine", "tests", "subjects", "classes", "periods", "meetings"].forEach((k) => { if (!Array.isArray(d[k])) d[k] = Array.isArray(base[k]) ? base[k] : []; });
-  ["timetable", "lessonLog", "rosters", "weeklyManual", "dayMemo", "targets", "testProgress", "roadmap", "lessonNotes"].forEach((k) => { if (!d[k] || typeof d[k] !== "object") d[k] = {}; });
+  ["lessonLog", "rosters", "weeklyManual", "dayMemo", "targets", "testProgress", "roadmap", "lessonNotes"].forEach((k) => { if (!d[k] || typeof d[k] !== "object") d[k] = {}; });
+  // 週ごと時間割へ移行（毎週共通テンプレは持たない：週ごとに独立・空スタート）
+  if (!d.timetableByWeek || typeof d.timetableByWeek !== "object") d.timetableByWeek = {};
+  delete d.timetable;
   if (!Array.isArray(d.terms) || !d.terms.length) { const fy = parseInt(String(d.meta && d.meta.year || "").replace(/\D/g, ""), 10) || new Date().getFullYear(); d.terms = [{ id: uid(), name: "1学期", start: `${fy}-04-01` }, { id: uid(), name: "2学期", start: `${fy}-09-01` }, { id: uid(), name: "3学期", start: `${fy + 1}-01-08` }]; }
   d.todos = (d.todos || []).map((t) => typeof t === "string" ? { id: uid(), text: t, done: false, cat: "その他" } : { cat: "その他", ...t });
   if (!d.meta.theme) d.meta.theme = "light";
@@ -202,24 +207,26 @@ function defaultData() {
     classes: ["1-1", "1-2", "2-1", "2-2", "3-1", "3-2"],
     homeroom: "2-1",
     targets: { 数学: 140, 英語: 140, 国語: 140, 理科: 140, 社会: 105, 保健体育: 105, 道徳: 35, 学活: 35, 総合: 70 },
-    // timetable[dayIdx][periodIdx] = { subject, klass, room }
-    timetable: {
-      "0-0": { subject: "数学", klass: "2-1", room: "" },
-      "0-1": { subject: "数学", klass: "1-1", room: "" },
-      "0-3": { subject: "数学", klass: "3-1", room: "" },
-      "0-5": { subject: "学活", klass: "2-1", room: "" },
-      "1-0": { subject: "数学", klass: "2-2", room: "" },
-      "1-2": { subject: "数学", klass: "2-1", room: "" },
-      "1-4": { subject: "数学", klass: "1-2", room: "" },
-      "2-1": { subject: "数学", klass: "3-1", room: "" },
-      "2-2": { subject: "数学", klass: "1-1", room: "" },
-      "2-3": { subject: "道徳", klass: "2-1", room: "" },
-      "3-0": { subject: "数学", klass: "1-2", room: "" },
-      "3-1": { subject: "数学", klass: "2-2", room: "" },
-      "3-4": { subject: "数学", klass: "2-1", room: "" },
-      "4-2": { subject: "数学", klass: "1-1", room: "" },
-      "4-3": { subject: "数学", klass: "3-1", room: "" },
-      "4-5": { subject: "総合", klass: "2-1", room: "" },
+    // timetableByWeek[週の月曜(YYYY-MM-DD)][`${dayIdx}-${periodIdx}`] = { subject, klass, room, alt } 週ごとに独立
+    timetableByWeek: {
+      [ymd(startOfWeekMon(today))]: {
+        "0-0": { subject: "数学", klass: "2-1", room: "" },
+        "0-1": { subject: "数学", klass: "1-1", room: "" },
+        "0-3": { subject: "数学", klass: "3-1", room: "" },
+        "0-5": { subject: "学活", klass: "2-1", room: "" },
+        "1-0": { subject: "数学", klass: "2-2", room: "" },
+        "1-2": { subject: "数学", klass: "2-1", room: "" },
+        "1-4": { subject: "数学", klass: "1-2", room: "" },
+        "2-1": { subject: "数学", klass: "3-1", room: "" },
+        "2-2": { subject: "数学", klass: "1-1", room: "" },
+        "2-3": { subject: "道徳", klass: "2-1", room: "" },
+        "3-0": { subject: "数学", klass: "1-2", room: "" },
+        "3-1": { subject: "数学", klass: "2-2", room: "" },
+        "3-4": { subject: "数学", klass: "2-1", room: "" },
+        "4-2": { subject: "数学", klass: "1-1", room: "" },
+        "4-3": { subject: "数学", klass: "3-1", room: "" },
+        "4-5": { subject: "総合", klass: "2-1", room: "" },
+      },
     },
     // lessonLog[`${date}-${periodIdx}`] = { done, subject, klass, topic, hw }
     lessonLog: {},
@@ -585,10 +592,11 @@ function ImportModal({ open, kind: kind0, ctx, data, setData, onClose }) {
       return;
     }
     if (kind === "timetable") {
+      const twk = curCtx.weekKey || mondayKey(new Date());
       setData((d) => {
-        const tt = { ...d.timetable };
-        (result.cells || []).forEach((c) => { const di = DAYMAP[(c.day || "")[0]]; const pi = (Number(c.period) || 0) - 1; if (di >= 0 && pi >= 0 && c.subject) tt[`${di}-${pi}`] = { subject: c.subject, klass: c.klass || "", room: c.room || "" }; });
-        return { ...d, timetable: tt };
+        const w = { ...((d.timetableByWeek || {})[twk] || {}) };
+        (result.cells || []).forEach((c) => { const di = DAYMAP[(c.day || "")[0]]; const pi = (Number(c.period) || 0) - 1; if (di >= 0 && pi >= 0 && c.subject) w[`${di}-${pi}`] = { subject: c.subject, klass: c.klass || "", room: c.room || "" }; });
+        return { ...d, timetableByWeek: { ...d.timetableByWeek, [twk]: w } };
       });
       onClose();
       return;
@@ -1075,7 +1083,8 @@ function OfflineTextImportModal({ open, data, setData, onClose, showToast }) {
       setData((d) => { const days = { ...(d.club.days || {}) }; chosen.forEach((r) => { days[r.date] = r.entry; }); return { ...d, club: { ...d.club, days } }; });
       showToast && showToast(`部活予定を${chosen.length}件取り込みました`, prev);
     } else {
-      setData((d) => { const tt = { ...d.timetable }; chosen.forEach((r) => { tt[`${r.di}-${r.pi}`] = { subject: r.subject, klass: r.klass || "", room: r.room || "" }; }); return { ...d, timetable: tt }; });
+      const twk = mondayKey(new Date());
+      setData((d) => { const w = { ...((d.timetableByWeek || {})[twk] || {}) }; chosen.forEach((r) => { w[`${r.di}-${r.pi}`] = { subject: r.subject, klass: r.klass || "", room: r.room || "" }; }); return { ...d, timetableByWeek: { ...d.timetableByWeek, [twk]: w } }; });
       showToast && showToast(`時間割を${chosen.length}コマ取り込みました`, prev);
     }
     onClose();
@@ -1178,7 +1187,7 @@ function ExcelImportModal({ open, onClose, data, setData, showToast }) {
         Object.keys(grouped).forEach((c) => { rosters[c] = grouped[c]; classes.add(c); });
         return { ...d, rosters, classes: Array.from(classes) };
       }
-      const tt = { ...d.timetable }; rows.forEach((r) => { tt[`${r.di}-${r.pi}`] = { subject: r.subject, klass: r.klass, room: "" }; }); return { ...d, timetable: tt };
+      const twk2 = mondayKey(new Date()); const w = { ...((d.timetableByWeek || {})[twk2] || {}) }; rows.forEach((r) => { w[`${r.di}-${r.pi}`] = { subject: r.subject, klass: r.klass, room: "" }; }); return { ...d, timetableByWeek: { ...d.timetableByWeek, [twk2]: w } };
     });
     showToast && showToast(`${label[kind]}を${rows.length}件取り込みました`, prev);
     onClose();
@@ -1387,10 +1396,11 @@ function TodayView({ data, setData, selDate, setSelDate, user }) {
   const agenda = useMemo(() => {
     const items = [];
     const termStart = currentTerm(data, selDate).start;
+    const tt = weekTT(data, mondayKey(selDate));
     data.routine.forEach((r) => items.push({ time: r.time, kind: "routine", title: r.title }));
     if (idx >= 0) {
       data.periods.forEach((p, pi) => {
-        const cell = data.timetable[`${idx}-${pi}`];
+        const cell = tt[`${idx}-${pi}`];
         if (cell && cell.subject) {
           const log = data.lessonLog[`${key}-${pi}`] || {};
           const seq = cell.klass ? lessonOrdinal(data, cell.subject, cell.klass, key, pi, termStart) : null;
@@ -1407,7 +1417,7 @@ function TodayView({ data, setData, selDate, setSelDate, user }) {
   }, [data, idx, key]);
 
   const toggleDone = (pi) => {
-    const cell = data.timetable[`${idx}-${pi}`];
+    const cell = weekTT(data, mondayKey(selDate))[`${idx}-${pi}`];
     setData((d) => {
       const k = `${key}-${pi}`;
       const cur = d.lessonLog[k] || {};
@@ -1511,7 +1521,7 @@ function TodayView({ data, setData, selDate, setSelDate, user }) {
 
       <Modal open={editLesson !== null} title={`授業計画（${selDate.getMonth() + 1}/${selDate.getDate()} ${editLesson !== null ? data.periods[editLesson].label + "限" : ""}）`} onClose={() => setEditLesson(null)}>
         {editLesson !== null && (() => {
-          const cell = data.timetable[`${idx}-${editLesson}`] || {};
+          const cell = weekTT(data, mondayKey(selDate))[`${idx}-${editLesson}`] || {};
           const lk = `${key}-${editLesson}`;
           const log = data.lessonLog[lk] || {};
           const setLog = (patch) => setData((d) => ({ ...d, lessonLog: { ...d.lessonLog, [lk]: { ...(d.lessonLog[lk] || {}), subject: cell.subject, klass: cell.klass, ...patch } } }));
@@ -1536,6 +1546,11 @@ function TodayView({ data, setData, selDate, setSelDate, user }) {
 function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint, onPrintWeekplan }) {
   const cols = data.meta.includeSat ? 6 : 5;
   const monday = startOfWeekMon(selDate);
+  const wk = ymd(monday);
+  const tt = weekTT(data, wk);
+  // 週の1コマを書き込む/消す（その週だけ）
+  const putCell = (key, cell) => setData((d) => ({ ...d, timetableByWeek: { ...d.timetableByWeek, [wk]: { ...((d.timetableByWeek || {})[wk] || {}), [key]: cell } } }));
+  const delCell = (key) => setData((d) => { const w = { ...((d.timetableByWeek || {})[wk] || {}) }; delete w[key]; return { ...d, timetableByWeek: { ...d.timetableByWeek, [wk]: w } }; });
   const [edit, setEdit] = useState(null); // {dayIdx, periodIdx}
   const [bulk, setBulk] = useState(false);
   const [imp, setImp] = useState(false);
@@ -1543,13 +1558,13 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
   const [shareChk, setShareChk] = useState(false);
   const editInfo = useMemo(() => {
     if (!edit) return null;
-    const cell = data.timetable[`${edit.dayIdx}-${edit.periodIdx}`] || { subject: "", klass: "", room: "" };
+    const cell = weekTT(data, wk)[`${edit.dayIdx}-${edit.periodIdx}`] || { subject: "", klass: "", room: "" };
     const cdate = addDays(monday, edit.dayIdx);
     const termId = currentTerm(data, cdate).id || "";
     const ord = cell.subject && cell.klass ? lessonOrdinal(data, cell.subject, cell.klass, ymd(cdate), edit.periodIdx, currentTerm(data, cdate).start) : null;
     const noteKey = (cell.subject && cell.klass && ord != null) ? lessonNoteKey(termId, cell.subject, cell.klass, ord) : null;
     return { cell, cdate, termId, ord, noteKey };
-  }, [edit, data, monday]);
+  }, [edit, data, monday, wk]);
   useEffect(() => { if (edit && editInfo) { setNoteText((editInfo.noteKey && data.lessonNotes[editInfo.noteKey]) || ""); setShareChk(false); } }, [edit]);
 
   const weekEvents = useMemo(() => {
@@ -1588,7 +1603,7 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
             <React.Fragment key={pi}>
               <div className="tp-tt-period"><b>{p.label}</b><span>{p.start}</span></div>
               {Array.from({ length: cols }).map((_, di) => {
-                const cell = data.timetable[`${di}-${pi}`];
+                const cell = tt[`${di}-${pi}`];
                 const cdate = addDays(monday, di);
                 const seq = cell?.subject && cell?.klass ? lessonOrdinal(data, cell.subject, cell.klass, ymd(cdate), pi, currentTerm(data, cdate).start) : null;
                 const hasNote = seq != null && !!(data.lessonNotes || {})[lessonNoteKey(currentTerm(data, cdate).id || "", cell.subject, cell.klass, seq)];
@@ -1628,20 +1643,20 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
       <Modal open={!!edit} title={edit ? `${DAY_LABELS[edit.dayIdx]}曜 ${data.periods[edit.periodIdx].label}限` : ""} onClose={() => setEdit(null)}>
         {edit && (() => {
           const k = `${edit.dayIdx}-${edit.periodIdx}`;
-          const cell = data.timetable[k] || { subject: "", klass: "", room: "" };
-          const set = (patch) => setData((d) => ({ ...d, timetable: { ...d.timetable, [k]: { ...cell, ...patch } } }));
+          const cell = tt[k] || { subject: "", klass: "", room: "" };
+          const set = (patch) => putCell(k, { ...cell, ...patch });
           return (
             <>
-              <label className="tp-field"><span>教科</span>
-                <select value={cell.subject} onChange={(e) => set({ subject: e.target.value })}>
-                  <option value="">（なし）</option>
-                  {data.subjects.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}
-                </select></label>
-              <label className="tp-field"><span>クラス</span>
-                <select value={cell.klass} onChange={(e) => set({ klass: e.target.value })}>
-                  <option value="">—</option>
-                  {data.classes.map((c) => <option key={c} value={c}>{c}</option>)}
-                </select></label>
+              <div className="tp-field"><span>教科</span>
+                <div className="tp-pickgrid">
+                  {data.subjects.map((s) => <button key={s.name} type="button" className={"tp-pick" + (cell.subject === s.name ? " on" : "")} style={cell.subject === s.name ? { borderColor: subjColor(data, s.name), background: subjColor(data, s.name) + "22", color: subjColor(data, s.name) } : {}} onClick={() => set({ subject: cell.subject === s.name ? "" : s.name })}>{s.name}</button>)}
+                </div>
+              </div>
+              <div className="tp-field"><span>クラス</span>
+                <div className="tp-pickgrid">
+                  {data.classes.map((c) => <button key={c} type="button" className={"tp-pick" + (cell.klass === c ? " on" : "")} onClick={() => set({ klass: cell.klass === c ? "" : c })}>{c}</button>)}
+                </div>
+              </div>
               <label className="tp-field"><span>教室</span><input value={cell.room} onChange={(e) => set({ room: e.target.value })} placeholder="例）理科室" /></label>
               {cell.subject && editInfo && (() => {
                 const alk = `${ymd(editInfo.cdate)}-${edit.periodIdx}`;
@@ -1660,7 +1675,7 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
                 </>
               )}
               <div className="tp-modal-actions">
-                <button className="tp-dangerbtn" style={{ marginTop: 0 }} onClick={() => { setData((d) => { const t = { ...d.timetable }; delete t[k]; return { ...d, timetable: t }; }); setEdit(null); }}><Trash2 size={14} /> このコマを空にする</button>
+                <button className="tp-dangerbtn" style={{ marginTop: 0 }} onClick={() => { delCell(k); setEdit(null); }}><Trash2 size={14} /> このコマを空にする</button>
                 <button className="tp-primarybtn" onClick={() => {
                   if (editInfo && editInfo.noteKey) {
                     const key = editInfo.noteKey; const txt = noteText; const share = shareChk;
@@ -1681,14 +1696,13 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
           );
         })()}
       </Modal>
-      <ImportModal open={imp} kind="timetable" ctx={{ subjects: data.subjects.map((s) => s.name), classes: data.classes }} data={data} setData={setData} onClose={() => setImp(false)} />
-      <BulkTimetableModal open={bulk} cols={cols} data={data} setData={setData} onClose={() => setBulk(false)} />
-    </div>
+      <ImportModal open={imp} kind="timetable" ctx={{ subjects: data.subjects.map((s) => s.name), classes: data.classes, weekKey: wk }} data={data} setData={setData} onClose={() => setImp(false)} />
+      <BulkTimetableModal open={bulk} cols={cols} data={data} setData={setData} onClose={() => setBulk(false)} wk={wk} />    </div>
   );
 }
 
 /* 週間：教科ごとに曜日×時限をまとめて配置（毎週共通の時間割テンプレに反映） */
-function BulkTimetableModal({ open, cols, data, setData, onClose }) {
+function BulkTimetableModal({ open, cols, data, setData, onClose, wk }) {
   const [subject, setSubject] = useState((data.subjects[0] || {}).name || "");
   const [klass, setKlass] = useState("");
   const [room, setRoom] = useState("");
@@ -1696,11 +1710,12 @@ function BulkTimetableModal({ open, cols, data, setData, onClose }) {
   useEffect(() => { if (open) { setSubject((data.subjects[0] || {}).name || ""); setKlass(""); setRoom(""); setPicked({}); } }, [open]);
   const toggle = (di, pi) => setPicked((p) => { const k = `${di}-${pi}`; const n = { ...p }; if (n[k]) delete n[k]; else n[k] = true; return n; });
   const keys = Object.keys(picked);
-  const apply = () => { if (!keys.length) return; setData((d) => { const tt = { ...d.timetable }; keys.forEach((k) => { tt[k] = { subject, klass, room }; }); return { ...d, timetable: tt }; }); onClose(); };
-  const clear = () => { if (!keys.length) return; setData((d) => { const tt = { ...d.timetable }; keys.forEach((k) => delete tt[k]); return { ...d, timetable: tt }; }); onClose(); };
+  const curTT = weekTT(data, wk);
+  const apply = () => { if (!keys.length) return; setData((d) => { const w = { ...((d.timetableByWeek || {})[wk] || {}) }; keys.forEach((k) => { w[k] = { subject, klass, room }; }); return { ...d, timetableByWeek: { ...d.timetableByWeek, [wk]: w } }; }); onClose(); };
+  const clear = () => { if (!keys.length) return; setData((d) => { const w = { ...((d.timetableByWeek || {})[wk] || {}) }; keys.forEach((k) => delete w[k]); return { ...d, timetableByWeek: { ...d.timetableByWeek, [wk]: w } }; }); onClose(); };
   return (
     <Modal open={open} title="教科をまとめて配置" onClose={onClose} wide>
-      <p className="tp-hint" style={{ marginTop: 0 }}>教科（クラス・教室）を選び、下の表で入れたいコマを<b>タップして複数選択</b> →「まとめて設定」。毎週共通の時間割に反映されます。</p>
+      <p className="tp-hint" style={{ marginTop: 0 }}>教科（クラス・教室）を選び、下の表で入れたいコマを<b>タップして複数選択</b> →「まとめて設定」。<b>この週だけ</b>に反映されます。</p>
       <div className="tp-field-row">
         <label className="tp-field"><span>教科</span>
           <select value={subject} onChange={(e) => setSubject(e.target.value)}>{data.subjects.map((s) => <option key={s.name} value={s.name}>{s.name}</option>)}</select></label>
@@ -1714,7 +1729,7 @@ function BulkTimetableModal({ open, cols, data, setData, onClose }) {
         {data.periods.map((p, pi) => (
           <React.Fragment key={pi}>
             <div className="tp-bulk-period">{p.label}</div>
-            {Array.from({ length: cols }).map((_, di) => { const k = `${di}-${pi}`; const cur = data.timetable[k]; const on = !!picked[k]; return (
+            {Array.from({ length: cols }).map((_, di) => { const k = `${di}-${pi}`; const cur = curTT[k]; const on = !!picked[k]; return (
               <button key={di} className={"tp-bulk-cell" + (on ? " on" : "")} onClick={() => toggle(di, pi)}>
                 {on ? <Check size={14} /> : (cur?.subject ? <span className="tp-bulk-cur">{cur.subject}<br />{cur.klass}</span> : "")}
               </button>
@@ -1990,8 +2005,9 @@ function parseTextbookText(text) {
 
 function weeklyClassCount(data, klass) {
   const cols = data.meta.includeSat ? 6 : 5;
+  const tt = weekTT(data, mondayKey(new Date()));
   let n = 0;
-  for (let di = 0; di < cols; di++) for (let pi = 0; pi < data.periods.length; pi++) { const c = data.timetable[`${di}-${pi}`]; if (c?.klass === klass) n++; }
+  for (let di = 0; di < cols; di++) for (let pi = 0; pi < data.periods.length; pi++) { const c = tt[`${di}-${pi}`]; if (c?.klass === klass) n++; }
   return n;
 }
 /* --- 時数カウント（学期の起点から・実施済みベース・教科×クラス別） --- */
@@ -2007,14 +2023,16 @@ function termEndOf(data, term) {
   const i = terms.findIndex((t) => t.id === term.id || t.start === term.start);
   return (i >= 0 && i < terms.length - 1) ? terms[i + 1].start : "9999-12-31";
 }
-// 週の時間割テンプレから、学期起点〜終端(inclusive)に「登録された授業コマ数」を数える（済みに関係なく累積）
+// 週ごとの時間割から、学期起点〜終端(inclusive)に「登録された授業コマ数」を数える（済みに関係なく累積・各週の実体を積み上げ）
 function scheduledCountUpTo(data, subject, klass, startYmd, endYmd) {
   if (!subject || endYmd < startYmd) return 0;
-  const cols = data.meta.includeSat ? 6 : 5;
-  const perDay = {};
-  for (let di = 0; di < cols; di++) { let c = 0; for (let pi = 0; pi < data.periods.length; pi++) { const cell = data.timetable[`${di}-${pi}`]; if (cell && cell.subject === subject && (klass == null || cell.klass === klass)) c++; } perDay[di] = c; }
-  let n = 0, d = parseYmd(startYmd); const end = parseYmd(endYmd);
-  while (d <= end) { const di = jsDayToIdx(d.getDay()); if (di >= 0 && perDay[di]) n += perDay[di]; d = addDays(d, 1); }
+  const P = data.periods.length; let n = 0;
+  let d = parseYmd(startYmd); const end = parseYmd(endYmd);
+  while (d <= end) {
+    const di = jsDayToIdx(d.getDay());
+    if (di >= 0) { const tt = weekTT(data, mondayKey(d)); for (let pi = 0; pi < P; pi++) { const cell = tt[`${di}-${pi}`]; if (cell && cell.subject === subject && (klass == null || cell.klass === klass)) n++; } }
+    d = addDays(d, 1);
+  }
   return n;
 }
 // 実施済み（done）の数を数える
@@ -2023,12 +2041,13 @@ function doneCountUpTo(data, subject, klass, startYmd, endYmd) {
   for (const lk in (data.lessonLog || {})) { const l = data.lessonLog[lk]; if (!l || !l.done || l.subject !== subject || (klass != null && l.klass !== klass)) continue; const d = lk.slice(0, 10); if (d < startYmd || d > endYmd) continue; n++; }
   return n;
 }
-// このコマが学期の「登録ベースで何時間目か」（済みに関係なく通し番号）
+// このコマが学期の「登録ベースで何時間目か」（済みに関係なく通し番号・週ごと実体ベース）
 function lessonOrdinal(data, subject, klass, key, pi, termStart) {
   if (key < termStart) return 1;
   const before = scheduledCountUpTo(data, subject, klass, termStart, ymd(addDays(parseYmd(key), -1)));
   const di = jsDayToIdx(parseYmd(key).getDay());
-  let today = 0; for (let p = 0; p < pi; p++) { const cell = data.timetable[`${di}-${p}`]; if (cell && cell.subject === subject && cell.klass === klass) today++; }
+  const tt = weekTT(data, mondayKey(parseYmd(key)));
+  let today = 0; for (let p = 0; p < pi; p++) { const cell = tt[`${di}-${p}`]; if (cell && cell.subject === subject && cell.klass === klass) today++; }
   return before + today + 1;
 }
 // 学期内の実施済み時数を 教科→{クラス:件数} で集計（従来互換）
@@ -2045,8 +2064,8 @@ function termLessonCounts(data, termStart, termEnd) {
 function lessonNoteKey(termId, subject, klass, ordinal) { return `${termId}::${subject}::${klass}::${ordinal}`; }
 // 時間割テンプレに存在する 教科→[クラス...] の一覧
 function timetableSubjectKlasses(data) {
-  const cols = data.meta.includeSat ? 6 : 5; const map = {};
-  for (let di = 0; di < cols; di++) for (let pi = 0; pi < data.periods.length; pi++) { const c = data.timetable[`${di}-${pi}`]; if (c && c.subject && c.klass) { (map[c.subject] = map[c.subject] || new Set()).add(c.klass); } }
+  const map = {}; const byWeek = data.timetableByWeek || {};
+  for (const wk in byWeek) { const tt = byWeek[wk] || {}; for (const key in tt) { const c = tt[key]; if (c && c.subject && c.klass) { (map[c.subject] = map[c.subject] || new Set()).add(c.klass); } } }
   const out = {}; Object.keys(map).forEach((s) => { out[s] = [...map[s]].sort(); }); return out;
 }
 const mondaysBetween = (from, to) => { const res = []; let d = startOfWeekMon(from); while (d <= to) { res.push(new Date(d)); d = addDays(d, 7); } return res; };
@@ -2242,7 +2261,7 @@ function TestsPanel({ data, setData }) {
 /* --- 年間計画パネル --- */
 function YearPlanPanel({ data, setData }) {
   const klass = data.planClass || data.classes[0] || "";
-  const plans = useMemo(() => generateYearPlan(data, klass), [data.tests, data.textbook, data.weeklyManual, data.planStart, klass, data.timetable]);
+  const plans = useMemo(() => generateYearPlan(data, klass), [data.tests, data.textbook, data.weeklyManual, data.planStart, klass, data.timetableByWeek]);
   const wk = data.weeklyManual?.[klass] ?? (weeklyClassCount(data, klass) || 4);
   return (
     <section className="tp-card">
@@ -2473,11 +2492,11 @@ function ProgressPanel({ data, setData }) {
 
 function ClassesView({ data, setData }) {
   const cols = data.meta.includeSat ? 6 : 5;
-  // 週あたりコマ数（時間割から）
+  // 週あたりコマ数（今週の時間割から）
   const weekly = useMemo(() => {
-    const bySub = {}, byClass = {};
+    const bySub = {}, byClass = {}; const cur = weekTT(data, mondayKey(new Date()));
     for (let di = 0; di < cols; di++) for (let pi = 0; pi < data.periods.length; pi++) {
-      const c = data.timetable[`${di}-${pi}`];
+      const c = cur[`${di}-${pi}`];
       if (c?.subject) { bySub[c.subject] = (bySub[c.subject] || 0) + 1; if (c.klass) byClass[c.klass] = (byClass[c.klass] || 0) + 1; }
     }
     return { bySub, byClass };
@@ -3036,10 +3055,10 @@ function SettingsModal({ open, onClose, data, setData, user, onLogout, onExporte
   useEffect(() => { if (open) { (async () => setBackups((await loadStore(`${NS}:backups:${user}`)) || []))(); } }, [open, user]);
   const doClear = () => {
     const prev = data;
-    if (pending === "timetable") { setData((d) => ({ ...d, timetable: {} })); showToast && showToast("時間割を空にしました", prev); }
+    if (pending === "timetable") { setData((d) => ({ ...d, timetableByWeek: {} })); showToast && showToast("時間割を空にしました", prev); }
     else if (pending === "club") { setData((d) => ({ ...d, club: { ...d.club, days: {}, specials: [], schedule: {} } })); showToast && showToast("部活予定を空にしました", prev); }
     else if (pending === "sample") { setData((d) => ({
-      ...d, timetable: {}, lessonLog: {}, events: [], todos: [], dayMemo: {}, weeklyManual: {},
+      ...d, timetableByWeek: {}, lessonLog: {}, events: [], todos: [], dayMemo: {}, weeklyManual: {},
       club: { ...d.club, days: {}, specials: [], schedule: {} },
       textbook: { ...(d.textbook || {}), units: [] }, tests: [], testProgress: {}, duties: [], routine: [], rosters: {},
       subjects: [], classes: [], homeroom: "",
@@ -3184,7 +3203,7 @@ function SettingsModal({ open, onClose, data, setData, user, onLogout, onExporte
                 for (const k of Object.keys(rest)) {
                   if (k === "club") next.club = { ...d.club, ...obj.club, days: { ...(d.club.days || {}), ...(obj.club.days || {}) }, schedule: { ...d.club.schedule, ...(obj.club.schedule || {}) }, specials: obj.club.specials || d.club.specials };
                   else if (k === "events") { const ex = new Set(d.events.map((ev) => ev.date + "|" + ev.title)); next.events = [...d.events, ...(obj.events || []).filter((ev) => !ex.has(ev.date + "|" + ev.title)).map((ev) => ({ id: uid(), ...ev }))]; }
-                  else if (k === "timetable") next.timetable = { ...d.timetable, ...obj.timetable };
+                  else if (k === "timetableByWeek") next.timetableByWeek = { ...(d.timetableByWeek||{}), ...obj.timetableByWeek };
                   else if (k === "lessonLog") next.lessonLog = { ...d.lessonLog, ...obj.lessonLog };
                   else if (k === "meta") next.meta = { ...d.meta, ...obj.meta, teacher: d.meta.teacher };
                   else next[k] = obj[k];
@@ -3620,7 +3639,7 @@ function OnboardingModal({ data, setData, openImport }) {
   const finish = (mode) => {
     setData((d) => {
       let nd = { ...d, meta: { ...d.meta, onboarded: true } };
-      if (mode === "empty") nd = { ...nd, timetable: {}, lessonLog: {}, events: [], todos: [], dayMemo: {}, weeklyManual: {}, club: { ...d.club, days: {}, specials: [], schedule: {} }, textbook: { ...(d.textbook || {}), units: [] }, tests: [], duties: [], routine: [], rosters: {}, subjects: [], classes: [], homeroom: "" };
+      if (mode === "empty") nd = { ...nd, timetableByWeek: {}, lessonLog: {}, events: [], todos: [], dayMemo: {}, weeklyManual: {}, club: { ...d.club, days: {}, specials: [], schedule: {} }, textbook: { ...(d.textbook || {}), units: [] }, tests: [], duties: [], routine: [], rosters: {}, subjects: [], classes: [], homeroom: "" };
       return nd;
     });
   };
@@ -4192,7 +4211,7 @@ function PrintRoot({ data, meta, printData, onClose }) {
                   <tr key={pi}>
                     <th className="tp-wp-p">{p.label}<br /><small>{p.start}</small></th>
                     {days.map((d, di) => {
-                      const cell = data.timetable[`${di}-${pi}`];
+                      const cell = weekTT(data, mondayKey(d))[`${di}-${pi}`];
                       const log = data.lessonLog[`${ymd(d)}-${pi}`];
                       return (
                         <td key={di} className="tp-wp-cell">
@@ -4707,6 +4726,9 @@ textarea{ resize:vertical; width:100%; }
 .tp-tt-note{ position:absolute; bottom:2px; right:4px; font-size:10px; color:var(--coral); line-height:1; }
 .tp-tt-alt{ position:absolute; bottom:2px; left:4px; font-size:8px; font-weight:800; color:#fff; background:var(--coral); border-radius:5px; padding:1px 4px; line-height:1.2; }
 .tp-altbadge{ font-size:10px; font-weight:800; color:#fff; background:var(--coral); border-radius:8px; padding:1px 7px; }
+.tp-pickgrid{ display:flex; flex-wrap:wrap; gap:6px; }
+.tp-pick{ border:1.5px solid var(--line); background:var(--card); color:var(--ink); border-radius:9px; padding:7px 12px; font-size:13px; font-weight:700; cursor:pointer; min-width:44px; }
+.tp-pick.on{ border-color:var(--sky-deep); background:var(--sky-soft); color:var(--sky-deep); }
 .tp-tt-cell:hover{ border-color:var(--sky); }
 .tp-tt-cell.after{ min-height:40px; cursor:default; }
 .tp-tt-sub{ font-weight:700; font-size:13px; }
