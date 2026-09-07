@@ -1606,12 +1606,22 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
                 const cell = tt[`${di}-${pi}`];
                 const cdate = addDays(monday, di);
                 const seq = cell?.subject && cell?.klass ? lessonOrdinal(data, cell.subject, cell.klass, ymd(cdate), pi, currentTerm(data, cdate).start) : null;
-                const hasNote = seq != null && !!(data.lessonNotes || {})[lessonNoteKey(currentTerm(data, cdate).id || "", cell.subject, cell.klass, seq)];
+                const noteKeyStr = seq != null ? lessonNoteKey(currentTerm(data, cdate).id || "", cell.subject, cell.klass, seq) : null;
+                const noteText = noteKeyStr ? ((data.lessonNotes || {})[noteKeyStr] || "") : "";
                 const alt = cell?.subject && !!(data.lessonLog[`${ymd(cdate)}-${pi}`] || {}).alt;
                 return (
-                  <button key={di} className="tp-tt-cell" onClick={() => setEdit({ dayIdx: di, periodIdx: pi })}
+                  <button key={di} className={"tp-tt-cell" + (cell?.subject ? " has" : "")} onClick={() => setEdit({ dayIdx: di, periodIdx: pi })}
                     style={cell?.subject ? { background: subjColor(data, cell.subject) + "1A", borderLeft: `3px solid ${subjColor(data, cell.subject)}` } : {}}>
-                    {cell?.subject ? (<><span className="tp-tt-sub" style={{ color: subjColor(data, cell.subject) }}>{cell.subject}</span><span className="tp-tt-klass">{cell.klass}</span>{cell.room && <span className="tp-tt-room">{cell.room}</span>}{alt && <span className="tp-tt-alt">ALT</span>}{seq != null && <span className="tp-tt-seq">第{seq}時</span>}{hasNote && <span className="tp-tt-note" title="メモあり">✎</span>}</>) : <span className="tp-tt-plus">+</span>}
+                    {cell?.subject ? (<>
+                      <span className="tp-tt-info">
+                        <span className="tp-tt-sub" style={{ color: subjColor(data, cell.subject) }}>{cell.subject}</span>
+                        <span className="tp-tt-klass">{cell.klass}</span>
+                        {cell.room && <span className="tp-tt-room">{cell.room}</span>}
+                        {alt && <span className="tp-tt-alt">ALT</span>}
+                      </span>
+                      {noteText && <span className="tp-tt-memo">{noteText}</span>}
+                      {seq != null && <span className="tp-tt-seq">第{seq}時</span>}
+                    </>) : <span className="tp-tt-plus">+</span>}
                   </button>
                 );
               })}
@@ -4722,6 +4732,9 @@ textarea{ resize:vertical; width:100%; }
 .tp-tt-period b{ font-size:14px; color:var(--ink); }
 .tp-tt-period.after b{ font-size:11px; }
 .tp-tt-cell{ position:relative; background:#fafcfd; border:1px solid var(--line); border-radius:8px; min-height:56px; padding:5px 6px; cursor:pointer; display:flex; flex-direction:column; gap:2px; align-items:flex-start; justify-content:center; transition:.12s; text-align:left; }
+.tp-tt-cell.has{ flex-direction:row; align-items:stretch; gap:6px; justify-content:flex-start; }
+.tp-tt-info{ display:flex; flex-direction:column; gap:2px; align-items:flex-start; flex:0 0 auto; min-width:0; }
+.tp-tt-memo{ flex:1 1 auto; min-width:0; font-size:10px; line-height:1.3; color:var(--ink); white-space:pre-wrap; overflow-wrap:anywhere; padding-right:26px; opacity:.9; }
 .tp-tt-seq{ position:absolute; top:2px; right:4px; font-size:9px; font-weight:800; color:var(--sky-deep); opacity:.85; line-height:1; }
 .tp-tt-note{ position:absolute; bottom:2px; right:4px; font-size:10px; color:var(--coral); line-height:1; }
 .tp-tt-alt{ position:absolute; bottom:2px; left:4px; font-size:8px; font-weight:800; color:#fff; background:var(--coral); border-radius:5px; padding:1px 4px; line-height:1.2; }
