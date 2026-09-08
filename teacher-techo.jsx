@@ -1556,6 +1556,7 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
   const [imp, setImp] = useState(false);
   const [noteText, setNoteText] = useState("");
   const [shareChk, setShareChk] = useState(false);
+  const [overwriteChk, setOverwriteChk] = useState(false);
   const editInfo = useMemo(() => {
     if (!edit) return null;
     const cell = weekTT(data, wk)[`${edit.dayIdx}-${edit.periodIdx}`] || { subject: "", klass: "", room: "" };
@@ -1565,7 +1566,7 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
     const noteKey = (cell.subject && cell.klass && ord != null) ? lessonNoteKey(termId, cell.subject, cell.klass, ord) : null;
     return { cell, cdate, termId, ord, noteKey };
   }, [edit, data, monday, wk]);
-  useEffect(() => { if (edit && editInfo) { setNoteText((editInfo.noteKey && data.lessonNotes[editInfo.noteKey]) || ""); setShareChk(false); } }, [edit]);
+  useEffect(() => { if (edit && editInfo) { setNoteText((editInfo.noteKey && data.lessonNotes[editInfo.noteKey]) || ""); setShareChk(false); setOverwriteChk(false); } }, [edit]);
 
   const weekEvents = useMemo(() => {
     const list = [];
@@ -1680,7 +1681,10 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
                   <label className="tp-field"><span>メモ（{cell.subject} 第{editInfo.ord}時）</span>
                     <textarea rows={3} value={noteText} onChange={(e) => setNoteText(e.target.value)} placeholder="この授業のメモ（ねらい・板書・持ち物 など）" /></label>
                   {(() => { const others = (timetableSubjectKlasses(data)[cell.subject] || []).filter((c) => c !== cell.klass); return others.length > 0 ? (
-                    <label className="tp-check"><input type="checkbox" checked={shareChk} onChange={(e) => setShareChk(e.target.checked)} /> 同じ「{cell.subject} 第{editInfo.ord}時」の他クラス（{others.join("・")}）にも追記して共有</label>
+                    <>
+                      <label className="tp-check"><input type="checkbox" checked={overwriteChk} onChange={(e) => { setOverwriteChk(e.target.checked); if (e.target.checked) setShareChk(false); }} /> 他の内容をクリアし、同じ「{cell.subject} 第{editInfo.ord}時」の他クラス（{others.join("・")}）に同じ内容を反映する</label>
+                      <label className="tp-check"><input type="checkbox" checked={shareChk} onChange={(e) => { setShareChk(e.target.checked); if (e.target.checked) setOverwriteChk(false); }} /> 同じ「{cell.subject} 第{editInfo.ord}時」の他クラス（{others.join("・")}）にも追記して共有</label>
+                    </>
                   ) : null; })()}
                 </>
               )}
@@ -1688,13 +1692,17 @@ function WeekView({ data, setData, selDate, setSelDate, vis, toggleVis, onPrint,
                 <button className="tp-dangerbtn" style={{ marginTop: 0 }} onClick={() => { delCell(k); setEdit(null); }}><Trash2 size={14} /> このコマを空にする</button>
                 <button className="tp-primarybtn" onClick={() => {
                   if (editInfo && editInfo.noteKey) {
-                    const key = editInfo.noteKey; const txt = noteText; const share = shareChk;
+                    const key = editInfo.noteKey; const txt = noteText; const share = shareChk; const overwrite = overwriteChk;
                     setData((d) => {
                       const notes = { ...(d.lessonNotes || {}) };
                       if (txt.trim()) notes[key] = txt; else delete notes[key];
-                      if (share && txt.trim()) {
+                      if ((share || overwrite) && txt.trim()) {
                         const others = (timetableSubjectKlasses(d)[cell.subject] || []).filter((c) => c !== cell.klass);
-                        others.forEach((oc) => { const ok = lessonNoteKey(editInfo.termId, cell.subject, oc, editInfo.ord); const cur = notes[ok] || ""; notes[ok] = cur.trim() ? (cur.trimEnd() + "\n" + txt) : txt; });
+                        others.forEach((oc) => {
+                          const ok = lessonNoteKey(editInfo.termId, cell.subject, oc, editInfo.ord);
+                          if (overwrite) { notes[ok] = txt; }
+                          else { const cur = notes[ok] || ""; notes[ok] = cur.trim() ? (cur.trimEnd() + "\n" + txt) : txt; }
+                        });
                       }
                       return { ...d, lessonNotes: notes };
                     });
