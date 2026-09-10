@@ -1773,11 +1773,11 @@ function CalItems({ evs, mini, max }) {
     <div className={"tp-cal-evs" + (mini ? " mini" : "")}>
       {clubs.map((e, j) => (
         <div key={"c" + j} className={"tp-cal-club" + (e.weekly ? " weekly" : "")} style={{ borderColor: e.color }}>
-          {e.lines.filter(Boolean).map((ln, li) => <span key={li} className={"tp-cal-cline l" + li}>{ln}</span>)}
+          {(mini ? e.lines.filter(Boolean).slice(0, 1) : e.lines.filter(Boolean)).map((ln, li) => <span key={li} className={"tp-cal-cline l" + li}>{ln}</span>)}
         </div>
       ))}
       {others.slice(0, cap).map((e, j) => <span key={"o" + j} className={"tp-cal-ev" + (e.faint ? " faint" : "")} style={{ background: e.color }}>{e.time ? e.time + " " : ""}{e.title}</span>)}
-      {others.length > cap && <span className="tp-cal-more">+{others.length - cap}</span>}
+      {others.length > cap && <span className="tp-cal-more">{mini ? "…" : "+" + (others.length - cap)}</span>}
     </div>
   );
 }
@@ -1885,7 +1885,7 @@ function MiniMonth({ data, year, month, vis, onPick }) {
           return (
             <button key={i} className={"tp-mini-cell wd" + date.getDay() + (isT ? " today" : "")} onClick={() => onPick(date)}>
               <span className="tp-mini-num">{date.getDate()}</span>
-              <CalItems evs={items} mini max={2} />
+              <CalItems evs={items} mini max={1} />
             </button>
           );
         })}
@@ -4582,7 +4582,6 @@ const CSS = `
 .tp-period-switch .tp-seg{ width:100%; }
 .tp-calview .tp-view{ padding:0; }
 .tp-quarter.six{ }
-@media (min-width:700px){ .tp-quarter.six{ grid-template-columns:repeat(3,1fr); } }
 /* guide / help */
 .tp-guide{ max-width:460px; }
 .tp-guide-step{ text-align:center; padding:10px 6px 4px; }
@@ -4869,25 +4868,26 @@ textarea{ resize:vertical; width:100%; }
 .tp-cat-tag{ margin-left:8px; font-size:11px; font-weight:600; color:var(--muted); background:var(--sky-soft); padding:2px 9px; border-radius:10px; }
 .tp-cat-dot{ width:9px; height:9px; border-radius:50%; flex-shrink:0; }
 /* ---- quarter (3 mini months) ---- */
-.tp-quarter{ display:grid; grid-template-columns:repeat(3,1fr); gap:14px; }
-.tp-mini-card{ padding:12px; }
+.tp-quarter{ display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+.tp-quarter.six{ grid-template-columns:repeat(3,1fr); }
+.tp-mini-card{ padding:8px; min-width:0; }
 .tp-mini-title{ text-align:center; font-weight:800; font-size:14px; margin-bottom:8px; color:var(--sky-deep); }
-.tp-mini-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:2px; }
+.tp-mini-grid{ display:grid; grid-template-columns:repeat(7,1fr); gap:1px; }
 .tp-mini-wd{ text-align:center; font-size:9.5px; color:var(--muted); font-weight:700; }
-.tp-mini-cell{ border:none; background:#fafcfd; border-radius:6px; min-height:42px; display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; cursor:pointer; padding:2px 3px; gap:1px; text-align:left; overflow:visible; }
+.tp-mini-cell{ border:none; background:#fafcfd; border-radius:5px; min-height:0; height:36px; display:flex; flex-direction:column; align-items:stretch; justify-content:flex-start; cursor:pointer; padding:1px 2px; gap:0; text-align:left; overflow:hidden; }
 .tp-mini-cell.empty{ background:transparent; cursor:default; }
 .tp-mini-cell:hover:not(.empty){ background:var(--sky-soft); }
 .tp-mini-cell.today{ background:var(--sky-soft); box-shadow:inset 0 0 0 2px var(--sky); }
-.tp-mini-num{ font-size:10px; font-weight:700; }
+.tp-mini-num{ font-size:10px; font-weight:700; line-height:1.1; }
 .tp-mini-cell.wd0 .tp-mini-num{ color:#D9534F; } .tp-mini-cell.wd6 .tp-mini-num{ color:var(--sky-deep); }
 .tp-mini-dots{ display:flex; gap:2px; height:5px; }
 .tp-mini-dots span{ width:5px; height:5px; border-radius:50%; }
-/* mini (3か月) の予定テキスト */
-.tp-cal-evs.mini{ margin-top:1px; gap:1px; }
-.tp-cal-evs.mini .tp-cal-ev{ font-size:8px; padding:0 3px; border-radius:3px; }
-.tp-cal-evs.mini .tp-cal-club{ padding:1px 3px; border-left-width:2px; }
-.tp-cal-evs.mini .tp-cal-cline{ font-size:7.5px; line-height:1.2; white-space:normal; overflow:visible; text-overflow:clip; word-break:break-word; overflow-wrap:anywhere; }
-.tp-cal-evs.mini .tp-cal-more{ font-size:7.5px; }
+/* mini (3/6か月) の予定テキスト：1件1行＋省略 */
+.tp-cal-evs.mini{ margin-top:1px; gap:1px; min-width:0; overflow:hidden; }
+.tp-cal-evs.mini .tp-cal-ev{ font-size:8px; padding:0 3px; border-radius:3px; display:block; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; line-height:1.3; }
+.tp-cal-evs.mini .tp-cal-club{ padding:0 3px; border-left-width:2px; overflow:hidden; }
+.tp-cal-evs.mini .tp-cal-cline{ display:block; font-size:7.5px; line-height:1.3; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; max-width:100%; }
+.tp-cal-evs.mini .tp-cal-more{ font-size:9px; font-weight:800; color:var(--muted); line-height:1; }
 /* 時間割プレビュー */
 .tp-ttpv{ display:grid; gap:3px; margin-bottom:8px; }
 .tp-ttpv-corner,.tp-ttpv-head,.tp-ttpv-p{ font-size:11px; font-weight:700; text-align:center; color:var(--sky-deep); display:flex; align-items:center; justify-content:center; }
@@ -5077,7 +5077,8 @@ textarea{ resize:vertical; width:100%; }
 @media (max-width:820px){
   .tp-app{ flex-direction:column; }
   .tp-tabs{ order:2; width:100%; flex-direction:row; flex-wrap:wrap; justify-content:center; border-right:none; border-top:1px solid var(--line); padding:5px 4px; overflow:visible; flex-shrink:0; }
-  .tp-quarter{ grid-template-columns:1fr; }
+  .tp-quarter{ grid-template-columns:repeat(3,1fr); gap:6px; }
+  .tp-mini-card{ padding:5px; }
   .tp-year{ grid-template-columns:1fr 1fr; }
   .tp-flick-seg{ flex:0 0 auto; padding:7px 10px; font-size:11.5px; }
   .tp-brand{ display:none; }
